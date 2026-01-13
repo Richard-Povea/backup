@@ -38,7 +38,7 @@ param(
 $ErrorActionPreference = "Stop"
 $maxRetries = 5
 $retryDelaySeconds = 10
-$logPath = Join-Path $LocalRootPath ($Code + "_download_log.txt")
+$global:logPath = Join-Path $LocalRootPath ($Code + "_download_log.txt")
 
 # ----------------------- Conexión ----------------------------
 Write-Host "Conectando a $SiteUrl..." -ForegroundColor Cyan
