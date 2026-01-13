@@ -158,6 +158,33 @@ function Remove-RelativeWebPrefix {
     }
 }
 
+function Get-Metadata{
+    param(
+        [Microsoft.SharePoint.Client.File]$file,
+        [string]$localFolderPath
+    )
+    $li = Get-PnPProperty -ClientObject $file -Property ListItemAllFields
+    # Recopilar metadatos comunes (ajusta campos según tu modelo)
+    $row = [PSCustomObject]@{
+        ArchivoNombre        = $li["FileLeafRef"]
+        ArchivoUrlServidor   = $li["FileRef"]
+        RutaLocal            = (Join-Path $localFolderPath $file.Name)
+        TamañoBytes          = $li["SMConvertTotalSize"]           # puede venir null si no está habilitado
+        Modificado           = $li["Modified"]
+        ModificadoPor        = $li["Editor"]
+        Creado               = $li["Created"]
+        CreadoPor            = $li["Author"]
+        VersionActual        = $li["_UIVersionString"]
+        TipoContenido        = $li["ContentType"]
+        Titulo               = $li["Title"]
+        # Ejemplos de columnas personalizadas:
+        Proyecto             = $li["Proyecto"]              # si existe
+        Estado               = $li["Estado"]                # si existe
+        FechaCierre          = $li["FechaCierre"]           # si existe
+    }
+    return $row
+}
+
 function Start-Process-Folder {
     param(
         [string]$folderServerUrl  # <-- server-relative, ej: /sites/Proyectos/Documentos compartidos/...
@@ -177,10 +204,7 @@ function Start-Process-Folder {
             Write-Host "Ya descargado (según log): $($f.ServerRelativeUrl)" -ForegroundColor Yellow
             continue
         }
-        # Metadatos vía ListItemAllFields
-        $li = Get-PnPProperty -ClientObject $f -Property ListItemAllFields
 
-        $fileName = $f.Name
         $serverRelativeUrl = $f.ServerRelativeUrl  # para descargar siempre usamos server-relative
         $newLolcalFolder
 
@@ -188,35 +212,16 @@ function Start-Process-Folder {
         $downloaded = Invoke-FileWithRetry `
             -serverRelativeUrl $serverRelativeUrl `
             -localFolderPath $localFolderPath `
-            -fileName $fileName
+            -fileName $f.Name
         if ($downloaded) {
             Write-Log "Descargado: $serverRelativeUrl"
-
-            # Recopilar metadatos comunes (ajusta campos según tu modelo)
-            $row = [PSCustomObject]@{
-                ArchivoNombre        = $li["FileLeafRef"]
-                ArchivoUrlServidor   = $li["FileRef"]
-                RutaLocal            = (Join-Path $localFolderPath $fileName)
-                TamañoBytes          = $li["SMConvertTotalSize"]           # puede venir null si no está habilitado
-                Modificado           = $li["Modified"]
-                ModificadoPor        = $li["Editor"]
-                Creado               = $li["Created"]
-                CreadoPor            = $li["Author"]
-                VersionActual        = $li["_UIVersionString"]
-                TipoContenido        = $li["ContentType"]
-                Titulo               = $li["Title"]
-                # Ejemplos de columnas personalizadas:
-                Proyecto             = $li["Proyecto"]              # si existe
-                Estado               = $li["Estado"]                # si existe
-                FechaCierre          = $li["FechaCierre"]           # si existe
-            }
-
-            $metadataRows.Add($row) | Out-Null
+            $metadataRow = Get-Metadata -file $f -localFolderPath $localFolderPath
+            $metadataRows.Add($metadataRow) | Out-Null
         }
         if (Test-Path $metadataCsvPath) {
-            $row | Export-Csv -Path $metadataCsvPath -Append -NoTypeInformation -Encoding UTF8
+            $metadataRow | Export-Csv -Path $metadataCsvPath -Append -NoTypeInformation -Encoding UTF8
         } else {
-            $row | Export-Csv -Path $metadataCsvPath -NoTypeInformation -Encoding UTF8
+            $metadataRow | Export-Csv -Path $metadataCsvPath -NoTypeInformation -Encoding UTF8
         }
     }
 
