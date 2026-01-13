@@ -46,3 +46,4 @@ foreach ($item in $items) {
 }
 
 Write-Host "Todos los items han sido procesados." -ForegroundColor Green
+Disconnect-PnPOnline
