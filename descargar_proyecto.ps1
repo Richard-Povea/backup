@@ -214,13 +214,14 @@ function Get-FilesInfoWithLog{
 }
 function Get-FilesInfo{
     param(
-        [Microsoft.SharePoint.Client.FileCollection]$files
+        [System.Object]$files
     )
     foreach ($f in $files) {
         Get-FileInfo -file $f
     }
 }
-function Start-ProcessFolderWithLog{
+# ----------------------- Proceso principal --------------------
+function Start-ProcessFolder{
     param(
         [string]$folderServerUrl,  # <-- server-relative, ej: /sites/Proyectos/Documentos compartidos/...
         [string]$logPath
@@ -235,31 +236,14 @@ function Start-ProcessFolderWithLog{
     Write-Host "Carpeta: $newFolderPath" -ForegroundColor Cyan
     
     $files = Get-PnPFolderItem -FolderSiteRelativeUrl $parsedUrl -ItemType File
-    Get-FilesInfoWithLog -files $files -logPath $logPath
-
-    # 2) Recorrer subcarpetas (también usando site-relative)
-    $subFolders = Get-PnPFolderItem -FolderSiteRelativeUrl $parsedUrl -ItemType Folder
-    foreach ($sf in $subFolders) {
-        # Evitar carpetas del sistema como Forms
-        if ($sf.Name -eq "Forms") { continue }
-        Start-Process-Folder -folderServerUrl $sf.ServerRelativeUrl  # propagamos server-relative
-    }
-}
-function Start-ProcessFolder{
-    param(
-        [string]$folderServerUrl  # <-- server-relative, ej: /sites/Proyectos/Documentos compartidos/...
-    )
-    $parsedUrl = Remove-RelativeWebPrefix -serverRelativeUrl $folderServerUrl
-    # Crear carpeta local correspondiente
-    $array = $parsedUrl -split '/'
-    # Select elements starting from index 2 to the end, then join them back with spaces
-    $newFolderPath = ($array | Select-Object -Skip 3) -join '/'
-    $localFolderPath = Join-Path $LocalRootPath $newFolderPath
-    New-SafePath -path $localFolderPath
-    Write-Host "Carpeta: $newFolderPath" -ForegroundColor Cyan
-    
-    $files = Get-PnPFolderItem -FolderSiteRelativeUrl $parsedUrl -ItemType File
-    Get-FilesInfo -files $files -logPath $logPath
+    if ($logPath) {
+        $logs_files = Get-Content $logPath | ForEach-Object {
+            $time, $value = $_.split('Descargado: ')
+            $value
+        }
+        $files = $files | Where-Object { $_.ServerRelativeUrl -notin $logs_files }
+    }    
+    Get-FilesInfo -files $files    
 
     # 2) Recorrer subcarpetas (también usando site-relative)
     $subFolders = Get-PnPFolderItem -FolderSiteRelativeUrl $parsedUrl -ItemType Folder
@@ -286,7 +270,7 @@ if (-not (Test-Path $logPath)) {
     # Iniciar
     Write-Log "Inicio de descarga para proyecto '$Code' en carpeta '$projectFolder'."
     Write-Host "Descargando archivos con log previo..." -ForegroundColor Magenta
-    Start-ProcessFolderWithLog -folderServerUrl $projectFolder -logPath $logPath
+    Start-ProcessFolder -folderServerUrl $projectFolder -logPath $logPath
 }
 Write-Host "Proceso finalizado." -ForegroundColor Green
 Write-Host "Sugerencia: respalda el CSV junto con las carpetas descargadas para trazabilidad."
