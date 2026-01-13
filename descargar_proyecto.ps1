@@ -40,11 +40,6 @@ $maxRetries = 5
 $retryDelaySeconds = 10
 $logPath = Join-Path $LocalRootPath ($Code + "_download_log.txt")
 
-# Asegurar carpeta local
-if (-not (Test-Path -LiteralPath $LocalRootPath)) {
-    throw "La ruta local '$LocalRootPath' no existe. Créala antes de ejecutar."
-}
-
 # ----------------------- Conexión ----------------------------
 Write-Host "Conectando a $SiteUrl..." -ForegroundColor Cyan
 Connect-PnPOnline -Url $SiteUrl -ClientId $ClientId
@@ -55,7 +50,7 @@ Write-Host "Biblioteca encontrada: $($list.Title)" -ForegroundColor Green
 
 # CSV para metadatos
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$metadataCsvPath = Join-Path $LocalRootPath ("export_metadata_" + $list.Title + "_" + $timestamp + ".csv")
+$metadataCsvPath = Join-Path $LocalRootPath ("export_metadata_" + $Code + "_" + $timestamp + ".csv")
 $metadataRows = New-Object System.Collections.Generic.List[Object]
 
 # ----------------------- Funciones auxiliares ----------------
@@ -71,9 +66,6 @@ function CheckFileInLog{
         [string]$path,
         [string]$example
     )
-    if (-not (Test-Path $path)) {
-        return $false
-    }
     $files = Get-Content $path | ForEach-Object {
         $time, $value = $_.split('Descargado: ')
         if ([string]::IsNullOrWhiteSpace($name) -or $name.Contains('#')) {
@@ -185,7 +177,75 @@ function Get-Metadata{
     return $row
 }
 
-function Start-Process-Folder {
+function Get-FileInfo{
+    param(
+        [System.Object]$file
+    )
+    $serverRelativeUrl = $file.ServerRelativeUrl  # para descargar siempre usamos server-relative
+    # Descargar
+    $downloaded = Invoke-FileWithRetry `
+        -serverRelativeUrl $serverRelativeUrl `
+        -localFolderPath $localFolderPath `
+        -fileName $file.Name
+    if ($downloaded) {
+        Write-Log "Descargado: $serverRelativeUrl"
+        $metadataRow = Get-Metadata -file $file -localFolderPath $localFolderPath
+        $metadataRows.Add($metadataRow) | Out-Null
+    }
+    if (Test-Path $metadataCsvPath) {
+        $metadataRow | Export-Csv -Path $metadataCsvPath -Append -NoTypeInformation -Encoding UTF8
+    } else {
+        $metadataRow | Export-Csv -Path $metadataCsvPath -NoTypeInformation -Encoding UTF8
+    }
+}
+
+function Get-FilesInfoWithLog{
+    param(
+        [System.Object]$files,
+        [string]$logPath
+    )
+    foreach ($f in $files) {
+        if (CheckFileInLog -path $logPath -example $f.ServerRelativeUrl) {
+            Write-Host "Ya descargado (según log): $($f.ServerRelativeUrl)" -ForegroundColor Yellow
+            continue
+        }
+        Get-FileInfo -file $f
+    }
+}
+function Get-FilesInfo{
+    param(
+        [Microsoft.SharePoint.Client.FileCollection]$files
+    )
+    foreach ($f in $files) {
+        Get-FileInfo -file $f
+    }
+}
+function Start-ProcessFolderWithLog{
+    param(
+        [string]$folderServerUrl,  # <-- server-relative, ej: /sites/Proyectos/Documentos compartidos/...
+        [string]$logPath
+    )
+    $parsedUrl = Remove-RelativeWebPrefix -serverRelativeUrl $folderServerUrl
+    # Crear carpeta local correspondiente
+    $array = $parsedUrl -split '/'
+    # Select elements starting from index 2 to the end, then join them back with spaces
+    $newFolderPath = ($array | Select-Object -Skip 3) -join '/'
+    $localFolderPath = Join-Path $LocalRootPath $newFolderPath
+    New-SafePath -path $localFolderPath
+    Write-Host "Carpeta: $newFolderPath" -ForegroundColor Cyan
+    
+    $files = Get-PnPFolderItem -FolderSiteRelativeUrl $parsedUrl -ItemType File
+    Get-FilesInfoWithLog -files $files -logPath $logPath
+
+    # 2) Recorrer subcarpetas (también usando site-relative)
+    $subFolders = Get-PnPFolderItem -FolderSiteRelativeUrl $parsedUrl -ItemType Folder
+    foreach ($sf in $subFolders) {
+        # Evitar carpetas del sistema como Forms
+        if ($sf.Name -eq "Forms") { continue }
+        Start-Process-Folder -folderServerUrl $sf.ServerRelativeUrl  # propagamos server-relative
+    }
+}
+function Start-ProcessFolder{
     param(
         [string]$folderServerUrl  # <-- server-relative, ej: /sites/Proyectos/Documentos compartidos/...
     )
@@ -199,31 +259,7 @@ function Start-Process-Folder {
     Write-Host "Carpeta: $newFolderPath" -ForegroundColor Cyan
     
     $files = Get-PnPFolderItem -FolderSiteRelativeUrl $parsedUrl -ItemType File
-    foreach ($f in $files) {
-        if (CheckFileInLog -path $logPath -example $f.ServerRelativeUrl) {
-            Write-Host "Ya descargado (según log): $($f.ServerRelativeUrl)" -ForegroundColor Yellow
-            continue
-        }
-
-        $serverRelativeUrl = $f.ServerRelativeUrl  # para descargar siempre usamos server-relative
-        $newLolcalFolder
-
-        # Descargar
-        $downloaded = Invoke-FileWithRetry `
-            -serverRelativeUrl $serverRelativeUrl `
-            -localFolderPath $localFolderPath `
-            -fileName $f.Name
-        if ($downloaded) {
-            Write-Log "Descargado: $serverRelativeUrl"
-            $metadataRow = Get-Metadata -file $f -localFolderPath $localFolderPath
-            $metadataRows.Add($metadataRow) | Out-Null
-        }
-        if (Test-Path $metadataCsvPath) {
-            $metadataRow | Export-Csv -Path $metadataCsvPath -Append -NoTypeInformation -Encoding UTF8
-        } else {
-            $metadataRow | Export-Csv -Path $metadataCsvPath -NoTypeInformation -Encoding UTF8
-        }
-    }
+    Get-FilesInfo -files $files -logPath $logPath
 
     # 2) Recorrer subcarpetas (también usando site-relative)
     $subFolders = Get-PnPFolderItem -FolderSiteRelativeUrl $parsedUrl -ItemType Folder
@@ -241,9 +277,17 @@ if (-not $projectFolder) {
 }
 # ----------------------- Recorrido recursivo -----------------
 
-# Iniciar
-Write-Log "Inicio de descarga para proyecto '$Code' en carpeta '$projectFolder'."
-Start-Process-Folder -folderServerUrl $projectFolder
+if (-not (Test-Path $logPath)) {
+    # Iniciar
+    Write-Log "Inicio de descarga para proyecto '$Code' en carpeta '$projectFolder'."
+    Write-Host "Descargando archivos sin log previo..." -ForegroundColor Magenta
+    Start-ProcessFolder -folderServerUrl $projectFolder
+} else {
+    # Iniciar
+    Write-Log "Inicio de descarga para proyecto '$Code' en carpeta '$projectFolder'."
+    Write-Host "Descargando archivos con log previo..." -ForegroundColor Magenta
+    Start-ProcessFolderWithLog -folderServerUrl $projectFolder -logPath $logPath
+}
 Write-Host "Proceso finalizado." -ForegroundColor Green
 Write-Host "Sugerencia: respalda el CSV junto con las carpetas descargadas para trazabilidad."
 Write-Log "Proceso finalizado."

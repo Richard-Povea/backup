@@ -15,12 +15,13 @@ $SettingsObject = Get-Content -Path .\config.json | ConvertFrom-Json
 $SiteUrl = $SettingsObject.site
 $LibraryTitle = "Proyectos en backup"
 # ---------------------- Funciones ----------------------------
-function Get-Left-Backups{
+function Get-LeftBackups{
     param (
         [string] $listName
     )
     return Get-PnPListItem `
-    -List $listName | Where-Object {
+    -List $listName `
+    -PageSize 5000 | Where-Object {
         $_["Backup"] -ne "Terminado"
     }
 }
@@ -33,7 +34,7 @@ Connect-PnPOnline -Url $SiteUrl -ClientId $env:CLIENT_ID
 $list = Get-PnPList -Identity $LibraryTitle -ErrorAction Stop
 Write-Host "Biblioteca encontrada: $($list.Title)" -ForegroundColor Green
 
-$items = Get-Left-Backups -listName $LibraryTitle
+$items = Get-LeftBackups -listName $LibraryTitle
 Write-Host "Items para modificar: $($items.Count)" -ForegroundColor Yellow
 
 foreach ($item in $items) {
