@@ -234,7 +234,7 @@ function Start-ProcessFolder{
     $localFolderPath = Join-Path $LocalRootPath $newFolderPath
     New-SafePath -path $localFolderPath
     Write-Host "Carpeta: $newFolderPath" -ForegroundColor Cyan
-    
+    #Filtrar Archivos ya descargados si hay un log
     $files = Get-PnPFolderItem -FolderSiteRelativeUrl $parsedUrl -ItemType File
     if ($logPath) {
         $logs_files = Get-Content $logPath | ForEach-Object {
@@ -244,7 +244,6 @@ function Start-ProcessFolder{
         $files = $files | Where-Object { $_.ServerRelativeUrl -notin $logs_files }
     }    
     Get-FilesInfo -files $files    
-
     # 2) Recorrer subcarpetas (también usando site-relative)
     $subFolders = Get-PnPFolderItem -FolderSiteRelativeUrl $parsedUrl -ItemType Folder
     foreach ($sf in $subFolders) {
