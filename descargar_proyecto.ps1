@@ -38,7 +38,15 @@ param(
 $ErrorActionPreference = "Stop"
 $maxRetries = 5
 $retryDelaySeconds = 10
-$global:logPath = Join-Path $LocalRootPath ($Code + "_download_log.txt")
+
+function Initialize-Logger {
+    param (
+        [string]$path
+    )
+    Set-Variable -Name logPath -Value $path -Scope Global
+}
+
+Initialize-Logger (Join-Path $LocalRootPath ($Code + "_download_log.txt"))
 
 # ----------------------- Conexión ----------------------------
 Write-Host "Conectando a $SiteUrl..." -ForegroundColor Cyan
@@ -61,25 +69,7 @@ function Write-Log {
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     Add-Content -Path $logPath -Value "$timestamp - $msg"
 }
-function CheckFileInLog{
-    param (
-        [string]$path,
-        [string]$example
-    )
-    $files = Get-Content $path | ForEach-Object {
-        $time, $value = $_.split('Descargado: ')
-        if ([string]::IsNullOrWhiteSpace($name) -or $name.Contains('#')) {
-            # skip empty or comment line in ENV file
-            return
-        }
-        $value
-    }
-    if ($files -contains $example) {
-        return $true
-    } else {
-        return $false
-    }
-}
+
 # Buscar las carpetas y buscar la carpeta que empiece con el prefijo dado
 function Find-FolderByPrefix {
     param (
@@ -199,19 +189,6 @@ function Get-FileInfo{
     }
 }
 
-function Get-FilesInfoWithLog{
-    param(
-        [System.Object]$files,
-        [string]$logPath
-    )
-    foreach ($f in $files) {
-        if (CheckFileInLog -path $logPath -example $f.ServerRelativeUrl) {
-            Write-Host "Ya descargado (según log): $($f.ServerRelativeUrl)" -ForegroundColor Yellow
-            continue
-        }
-        Get-FileInfo -file $f
-    }
-}
 function Get-FilesInfo{
     param(
         [System.Object]$files

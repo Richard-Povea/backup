@@ -2,5 +2,8 @@
     "site": "https://ruidoambientalspa.sharepoint.com/sites/Proyectos",
     "library": "Documentos compartidos",
     "project_code": "8128B",
-    "local_root_path": "C:\\ArchivosProyectos"
+    "local_root_path": "C:\\ArchivosProyectos",
+    "groupName": "Proyectos", 
+    "plannerName": "Cartera de proyectos", 
+    "bucketName": "Suspendido"
 }
