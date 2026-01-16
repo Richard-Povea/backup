@@ -16,7 +16,12 @@ Connect-PnPOnline -Url $SiteUrl -ClientId $env:CLIENT_ID
 # ----------------------- Backup List ----------------------------
 . .\lists.ps1
 
-$itemsLeftBackup = Get-LeftBackups -ListName $SettingsObject.backupLibrary 
+$itemsLeftBackup = Get-LeftBackups -ListName $SettingsObject.backupLibrary
+
+foreach ($item in $itemsLeftBackup){
+  Write-Host "Descarga del proyecto $($item["Title"]) en proceso." -ForegroundColor Green
+  Set-SharepointListItem -LibraryTitle $SettingsObject.backupLibrary -Item $item
+}
 
 # ------------------------- Backup -------------------------------
 . .\utils.ps1
