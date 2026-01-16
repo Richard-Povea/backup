@@ -13,13 +13,11 @@ $SiteUrl = $SettingsObject.site
 Write-Host "Conectando a $SiteUrl..." -ForegroundColor Cyan
 Connect-PnPOnline -Url $SiteUrl -ClientId $env:CLIENT_ID
 
-# ----------------------- Planner ----------------------------
-. .\planner.ps1
-$tasks = Get-PlannerTasksInBucket `
-  -groupName $SettingsObject.groupName `
-  -plannerName $SettingsObject.plannerName `
-  -bucketName $SettingsObject.bucketName
-$Code = 6050
+# ----------------------- Backup List ----------------------------
+. .\modify_list.ps1
+
+$itemsLeftBackup = Get-LeftBackups -listName $SettingsObjectbackupLibrary
+
 
 # ------------------------- Backup -------------------------------
 . .\utils.ps1
