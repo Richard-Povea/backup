@@ -14,10 +14,9 @@ Write-Host "Conectando a $SiteUrl..." -ForegroundColor Cyan
 Connect-PnPOnline -Url $SiteUrl -ClientId $env:CLIENT_ID
 
 # ----------------------- Backup List ----------------------------
-. .\modify_list.ps1
+. .\lists.ps1
 
-$itemsLeftBackup = Get-LeftBackups -listName $SettingsObjectbackupLibrary
-
+$itemsLeftBackup = Get-LeftBackups -ListName $SettingsObject.backupLibrary 
 
 # ------------------------- Backup -------------------------------
 . .\utils.ps1
