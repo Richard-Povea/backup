@@ -6,5 +6,8 @@
     "local_root_path": "C:\\ArchivosProyectos",
     "groupName": "Proyectos", 
     "plannerName": "Cartera de proyectos", 
-    "bucketName": "Suspendido"
+    "bucketName": "Suspendido",
+    "backupColumn": "Backup",
+    "inProcess": "En proceso",
+    "finished": "Terminado"
 }

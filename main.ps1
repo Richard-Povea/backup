@@ -30,9 +30,10 @@ if ($itemsLeftBackup.Count -eq 1){
 # ------------------------- Backup -------------------------------
 $code = $currentItem["Title"]
 Write-Host "Descarga del proyecto $code en proceso." -ForegroundColor Green
-$Column = "Backup"
-$InProcess = "En proceso"
-Set-PnPListItem -List $SettingsObject.backupLibrary -Identity $currentItem.Id -Values @{$Column = $InProcess}
+Set-PnPListItem `
+  -List $SettingsObject.backupLibrary `
+  -Identity $currentItem.Id `
+  -Values @{$SettingsObject.backupColumn = $SettingsObject.inProcess}
 . .\utils.ps1
 $projectParentFolder = python .\utils.py $code
 $parentFolder = $SettingsObject.library + "/" + $projectParentFolder
@@ -111,7 +112,9 @@ foreach ($file in $leftDownloads){
 # ------------------------- Delete -------------------------------
 Write-Host "Eliminando la carpeta del proyecto $folderName" -ForegroundColor Yellow
 Remove-PnPFolder -Name $folderName -Folder $parentFolder -Recycle
-$Finished = "Terminado"
-Set-PnPListItem -List $SettingsObject.backupLibrary -Identity $currentItem.Id -Values @{$Column = $Finished}
+Set-PnPListItem `
+  -List $SettingsObject.backupLibrary `
+  -Identity $currentItem.Id `
+  -Values @{$SettingsObject.backupColumn = $SettingsObject.finished}
 # ----------------------- Desconexión ----------------------------
 Disconnect-PnPOnline
