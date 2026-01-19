@@ -16,10 +16,3 @@ function Get-LeftBackups{
     return Get-PnPListItem -List $listName -Query $camlNotTerminado
 }
 
-function Set-SharepointListItem{
-    param(
-        [string] $LibraryTitle,
-        [Microsoft.SharePoint.Client.ListItem] $Item
-        )
-    Set-PnPListItem -List $LibraryTitle -Identity $Item.Id -Values @{"Backup" = "En proceso"}
-}
