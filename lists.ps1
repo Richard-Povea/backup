@@ -2,17 +2,23 @@ function Get-LeftBackups{
     param (
         [string] $listName
     )
-    $camlNotTerminado = "@
+    $camlNoTerminados = "@
     <View>
         <Query>
             <Where>
-                <Eq>
-                    <FieldRef Name='Backup' />
-                    <Value Type='Text'>Terminado</Value>
-                </Eq>
+                <Or>
+                    <Eq>
+                        <FieldRef Name='Backup' />
+                        <Value Type='Text'>No iniciado</Value>
+                    </Eq>
+                    <Eq>
+                        <FieldRef Name='Backup' />
+                        <Value Type='Text'>En proceso</Value>
+                    </Eq>
+                </Or>
             </Where>
         </Query>
     </View>"
-    return Get-PnPListItem -List $listName -Query $camlNotTerminado
+    return Get-PnPListItem -List $listName -Query $camlNoTerminados
 }
 
