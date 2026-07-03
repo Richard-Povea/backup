@@ -37,18 +37,67 @@ Set-PnPListItem `
 . .\utils.ps1
 $projectParentFolder = python .\utils.py $code
 $parentFolder = $SettingsObject.library + "/" + $projectParentFolder
+
 # Busca el nombre de la carpeta a partir del código
 $folderName = Find-FolderByPrefix `
-  -parentFolderUrl $parentFolder `
-  -prefix $code
+    -parentFolderUrl $parentFolder `
+    -prefix $code
+
 if (-not $folderName) {
     throw "No se encontró ninguna carpeta que comience con '$code' en '$parentFolder'."
 }
+
 $folderServerUrl = Join-Path $parentFolder $folderName
+
 $localRootPath = Join-Path $SettingsObject.local_root_path $code
-# Create local root path if it doesn't exist
+function Resolve-LocalFolderPath {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory)]
+        [string]$BasePath
+    )
+
+    if (-not (Test-Path -LiteralPath $BasePath)) {
+        return $BasePath
+    }
+
+    Write-Host ""
+    Write-Host "La carpeta '$BasePath' ya existe." -ForegroundColor Yellow
+    Write-Host "[R] Reemplazar carpeta existente"
+    Write-Host "[N] Crear una nueva carpeta con sufijo"
+
+    do {
+        $option = (Read-Host "Seleccione una opción (R/N)").ToUpper()
+    } while ($option -notin @("R", "N"))
+
+    switch ($option) {
+        "R" {
+            Write-Host "Eliminando carpeta existente..." -ForegroundColor Yellow
+            Remove-Item -LiteralPath $BasePath -Recurse -Force
+
+            return $BasePath
+        }
+
+        "N" {
+            $counter = 1
+
+            do {
+                $newPath = "{0}_{1}" -f $BasePath, $counter
+                $counter++
+            } while (Test-Path -LiteralPath $newPath)
+
+            Write-Host "Se utilizará la carpeta '$newPath'." -ForegroundColor Cyan
+
+            return $newPath
+        }
+    }
+}
+
+$localRootPath = Resolve-LocalFolderPath -BasePath $localRootPath
+
+# Crear carpeta local
 if (-not (Test-Path -LiteralPath $localRootPath)) {
-    New-Item -ItemType Directory -Path $localRootPath | Out-Null
+    New-Item -ItemType Directory -Path $localRootPath -Force | Out-Null
 }
 
 . .\descargar_proyecto.ps1
