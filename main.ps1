@@ -15,40 +15,99 @@ Connect-PnPOnline -Url $SiteUrl -ClientId $env:CLIENT_ID
 
 # ----------------------- Backup List ----------------------------
 . .\lists.ps1
-
+function Find-FolderByPrefix {
+    param (
+        [string]$parentFolderUrl,
+        [string]$prefix
+    )
+    $subfolders = Get-PnPFolderItem `
+        -FolderSiteRelativeUrl $parentFolderUrl `
+        -ItemType Folder
+    foreach ($sf in $subFolders) {
+        if ($sf.Name -match "$prefix\s-") {
+            return Split-Path -Path $sf.ServerRelativeUrl -Leaf
+        }
+    }
+    return $null
+}
 $itemsLeftBackup = Get-LeftBackups -ListName $SettingsObject.backupLibrary
-if ($itemsLeftBackup.Count -eq 0){
-  Write-Host "No hay items para hacer Backup"
-  exit 0
+
+# Validar nombres de proyectos
+$validItems = @()
+
+foreach ($item in $itemsLeftBackup) {
+
+    $code = $item["Title"]
+    
+    if ([string]::IsNullOrWhiteSpace($code)) {
+        Write-Warning "Item ID $($item.Id) descartado: Title vacío"
+        Set-PnPListItem `
+        -List $SettingsObject.backupLibrary `
+        -Identity $item.Id `
+        -Values @{$SettingsObject.backupColumn = $SettingsObject.error}
+        continue
+    }
+
+
+    try {
+        $projectParentFolder = python .\utils.py $code
+        $parentFolder = "$($SettingsObject.library)/$projectParentFolder"
+
+        $folderName = Find-FolderByPrefix `
+            -parentFolderUrl $parentFolder `
+            -prefix $code
+
+        if (-not $folderName) {
+            Write-Warning "Proyecto $code descartado: carpeta no encontrada"
+            Set-PnPListItem `
+              -List $SettingsObject.backupLibrary `
+              -Identity $item.Id `
+              -Values @{$SettingsObject.backupColumn = $SettingsObject.error}
+            continue
+        }
+
+        # ✅ item válido
+        $item | Add-Member -NotePropertyName FolderName -NotePropertyValue $folderName -Force
+        $validItems += $item
+    }
+    catch {
+        Write-Warning "Proyecto $code descartado por error: $_"
+    }
 }
-Write-Host "Items para modificar: $($itemsLeftBackup.Count)" -ForegroundColor Yellow
-if ($itemsLeftBackup.Count -eq 1){
-  $currentItem = $itemsLeftBackup
-}else{
-  $currentItem = $itemsLeftBackup[0]
+
+
+$itemsLeftBackup = $validItems
+
+if ($itemsLeftBackup.Count -eq 0) {
+    Write-Host "No hay proyectos válidos para backup" -ForegroundColor Yellow
+    exit 0
 }
+
+if ($itemsLeftBackup.Count -eq 1) {
+    $currentItem = $itemsLeftBackup[0]
+} else {
+    $currentItem = $itemsLeftBackup[0]
+}
+
 # ------------------------- Backup -------------------------------
 $code = $currentItem["Title"]
 Write-Host "Descarga del proyecto $code en proceso." -ForegroundColor Green
+$projectParentFolder = python .\utils.py $code
+$parentFolder = $SettingsObject.library + "/" + $projectParentFolder
+# Busca el nombre de la carpeta a partir del código
+
+$folderName = Find-FolderByPrefix `
+  -parentFolderUrl $parentFolder `
+  -prefix $code
+if (-not $folderName) {
+    throw "No se encontró ninguna carpeta que comience con '$code' en '$parentFolder'."
+}
 Set-PnPListItem `
   -List $SettingsObject.backupLibrary `
   -Identity $currentItem.Id `
   -Values @{$SettingsObject.backupColumn = $SettingsObject.inProcess}
 . .\utils.ps1
-$projectParentFolder = python .\utils.py $code
-$parentFolder = $SettingsObject.library + "/" + $projectParentFolder
-
-# Busca el nombre de la carpeta a partir del código
-$folderName = Find-FolderByPrefix `
-    -parentFolderUrl $parentFolder `
-    -prefix $code
-
-if (-not $folderName) {
-    throw "No se encontró ninguna carpeta que comience con '$code' en '$parentFolder'."
-}
-
 $folderServerUrl = Join-Path $parentFolder $folderName
-
 $localRootPath = Join-Path $SettingsObject.local_root_path $code
 function Resolve-LocalFolderPath {
     [CmdletBinding()]
@@ -114,16 +173,21 @@ function Get-LeftDownloads{
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $metadataCsvPath = Join-Path $LocalRootPath ("export_metadata_" + $code + "_" + $timestamp + ".csv")
 $metadataRows = New-Object System.Collections.Generic.List[Object]
-    
+
+Write-Host "Buscando Archivos ... (este proceso puede demorar unos minutos)" -ForegroundColor Yellow
 $files = Start-ProcessFolder -folderServerUrl $folderServerUrl
+$filtered_files = $files | Where-Object { $_ -ne $null }
+Write-Host "$($filtered_files.Count) archivos encontrados" -ForegroundColor Green
 if (Test-Path -LiteralPath $logPath) {
+  Write-Host "Archivo Log encontrado" -ForegroundColor Green
   $logFiles = Get-Content $logPath | ForEach-Object {
       $time, $value = $_.split('Descargado: ')
       $value
   }
-  $leftDownloads = Get-LeftDownloads -logFiles $logFiles -files $files
+  $leftDownloads = Get-LeftDownloads -logFiles $logFiles -files $filtered_files
 } else {
-  $leftDownloads = $files
+  Write-Host "Archivo Log no encontrado" -ForegroundColor Green
+  $leftDownloads = $filtered_files
 }
 function New-SafePath {
     param([string]$path)
@@ -132,13 +196,13 @@ function New-SafePath {
         New-Item -ItemType Directory -Path $path | Out-Null
     }
 }
-
+Write-Host "Descargando $($leftDownloads.Count) archivos..."
 foreach ($file in $leftDownloads){
   $serverRelativeUrl = $file.ServerRelativeUrl  # para descargar siempre usamos server-relative
   $array = $serverRelativeUrl -split '/'
   # Select elements starting from index 2 to the end, then join them back with spaces
   $newFolderPath = ($array | Select-Object -Skip 5) -join '/'
-  $currentFolderPath = Split-Path -Path $(Join-Path $SettingsObject.local_root_path $newFolderPath) -Parent
+  $currentFolderPath = Split-Path -Path $(Join-Path $localRootPath $newFolderPath) -Parent
   New-SafePath -path $currentFolderPath
   # Descargar
   $downloaded = Invoke-FileWithRetry `
@@ -157,13 +221,17 @@ foreach ($file in $leftDownloads){
       $metadataRow | Export-Csv -Path $metadataCsvPath -NoTypeInformation -Encoding UTF8
   }
 }
-
-# ------------------------- Delete -------------------------------
-Write-Host "Eliminando la carpeta del proyecto $folderName" -ForegroundColor Yellow
-Remove-PnPFolder -Name $folderName -Folder $parentFolder -Recycle
 Set-PnPListItem `
   -List $SettingsObject.backupLibrary `
   -Identity $currentItem.Id `
   -Values @{$SettingsObject.backupColumn = $SettingsObject.finished}
-# ----------------------- Desconexión ----------------------------
-Disconnect-PnPOnline
+
+# ------------------------- Delete -------------------------------
+Write-Host "Eliminando la carpeta del proyecto $folderName" -ForegroundColor Yellow
+Remove-PnPFolder -Name $folderName -Folder $parentFolder
+Set-PnPListItem `
+  -List $SettingsObject.backupLibrary `
+  -Identity $currentItem.Id `
+  -Values @{$SettingsObject.onlineColumn = $false}
+
+Write-Host "Proceso completado!" -ForegroundColor Green
